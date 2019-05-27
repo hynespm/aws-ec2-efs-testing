@@ -1,63 +1,647 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
-  "Description" : "Cloudformation template to test howEFS works with EC2 instances",
-  "Paramters" : {
-    "TagUseCase": {
+  "Description" : "EFS Testing template",
+  "Parameters": {
+    "Environment": {
+      "Description": "Environment Name",
       "Type": "String",
-      "Default": "Jenkins Build Server",
-      "Description": "Team (or person) launching instance and/or responsible for maintenance."
+      "Default": "test"
     },
+    "VPCName": {
+      "Description": "An environment name that will be prefixed to resource names",
+      "Type": "String",
+      "Default": "efs-test"
+    },
+    "CIDRRangeValueSharedServicesVpc": {
+      "Description": "Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone",
+      "Type": "String",
+      "Default": "0"
+    }
   },
   "Resources" : {
+    "ECSASGLaunchConfiguration": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "AssociatePublicIpAddress": false,
+        "ImageId": "ami-0ebbf2179e615c338",
+        "InstanceType": "t2.micro",
+        "SecurityGroups": [
+          {
+            "Ref": "EC2SecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "set -ex\n",
+                "yum install -y aws-cfn-bootstrap\n",
+                "yum -y install nfs-utils\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "ECSAutoScalingGroupOne": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "VPCZoneIdentifier": [
+          {
+            "Ref": "PublicSubnet1"
+          }
+        ],
+        "LaunchConfigurationName": {
+          "Ref": "ECSASGLaunchConfiguration"
+        },
+        "MinSize": "1",
+        "MaxSize": "1",
+        "DesiredCapacity": "1",
+        "HealthCheckType": "EC2",
+        "HealthCheckGracePeriod": "400",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  "asg",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "1"
+                ]
+              ]
+            },
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            },
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      }
+    },
+    "ECSAutoScalingGroupTwo": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "VPCZoneIdentifier": [
+          {
+            "Ref": "PublicSubnet2"
+          }
+        ],
+        "LaunchConfigurationName": {
+          "Ref": "ECSASGLaunchConfiguration"
+        },
+        "MinSize": "1",
+        "MaxSize": "1",
+        "DesiredCapacity": "1",
+        "HealthCheckType": "EC2",
+        "HealthCheckGracePeriod": "400",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  "asg",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "2"
+                ]
+              ]
+            },
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            },
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      }
+    },
+    "ECSAutoScalingGroupThree": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "VPCZoneIdentifier": [
+          {
+            "Ref": "PublicSubnet2"
+          }
+        ],
+        "LaunchConfigurationName": {
+          "Ref": "ECSASGLaunchConfiguration"
+        },
+        "MinSize": "1",
+        "MaxSize": "1",
+        "DesiredCapacity": "1",
+        "HealthCheckType": "EC2",
+        "HealthCheckGracePeriod": "400",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  "asg",
+                  {
+                    "Ref": "Environment"
+                  },"3"
+                ]
+              ]
+            },
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            },
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      }
+    },
+    "EC2SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "EC2 Security Group",
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "EFSSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupName": {
+          "Fn::Sub": [
+            "${PlatformName}-${Resource}-Security-Group-${AWS::Region}",
+            {
+              "PlatformName":"testing",
+              "Resource": "efs"
+            }
+          ]
+        },
+        "GroupDescription": "Security group for EFS mount target",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "2049",
+            "ToPort": "2049",
+            "SourceSecurityGroupId": {
+              "Ref": "EC2SecurityGroup"
+            }
+          }
+        ]
+      }
+    },
     "EFS": {
       "Type": "AWS::EFS::FileSystem",
-      "DeletionPolicy": "Retain",
       "Properties": {
         "FileSystemTags": [
           {
             "Key": "Name",
-            "Value": "efs"
-          },
-          {
-            "Key": "Use Case",
             "Value": {
-              "Ref": "TagUseCase"
+              "Fn::Join": [
+                "-",
+                [
+                  "efs",
+                  {
+                    "Ref": "Environment"
+                  }
+                ]
+              ]
             }
           }
-        ],
-        "PerformanceMode": "generalPurpose"
+        ]
       }
     },
-    "MountTargetAZ1": {
+    "MountTarget2": {
       "Type": "AWS::EFS::MountTarget",
       "Properties": {
         "FileSystemId": {
           "Ref": "EFS"
         },
         "SubnetId": {
-          "Fn::ImportValue": "VPC-Gore-AZ1-Id"
+          "Ref": "PublicSubnet2"
         },
         "SecurityGroups": [
           {
-            "Fn::ImportValue": "JenkinsEBEFSServerSG"
+            "Ref": "EFSSecurityGroup"
           }
         ]
       }
     },
-    "MountTargetAZ2": {
+    "MountTarget1": {
       "Type": "AWS::EFS::MountTarget",
       "Properties": {
         "FileSystemId": {
-          "Ref": "JenkinsEFSProd"
+          "Ref": "EFS"
         },
         "SubnetId": {
-          "Fn::ImportValue": "VPC-Gore-AZ2-Id"
+          "Ref": "PublicSubnet1"
         },
         "SecurityGroups": [
           {
-            "Fn::ImportValue": "JenkinsEBEFSServerSG"
+            "Ref": "EFSSecurityGroup"
           }
         ]
+      }
+    },
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": {
+          "Fn::Sub": [
+            "10.${BlockValue}.0.0/16",
+            {
+              "BlockValue": {
+                "Ref": "CIDRRangeValueSharedServicesVpc"
+              }
+            }
+          ]
+        },
+        "EnableDnsSupport": true,
+        "EnableDnsHostnames": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "VPCName"
+                  },
+                  {
+                    "Ref": "Environment"
+                  },
+                  "vpc"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Ref": "VPCName"
+            }
+          }
+        ]
+      }
+    },
+    "InternetGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "InternetGatewayId": {
+          "Ref": "InternetGateway"
+        },
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "PublicSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            0,
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Fn::Sub": [
+            "10.${BlockValue}.0.0/20",
+            {
+              "BlockValue": {
+                "Ref": "CIDRRangeValueSharedServicesVpc"
+              }
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${VPCName} Public Subnet (AZ1)"
+            }
+          }
+        ]
+      }
+    },
+    "PublicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            1,
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Fn::Sub": [
+            "10.${BlockValue}.32.0/20",
+            {
+              "BlockValue": {
+                "Ref": "CIDRRangeValueSharedServicesVpc"
+              }
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${VPCName} Public Subnet (AZ2)"
+            }
+          }
+        ]
+      }
+    },
+    "PrivateSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            0,
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Fn::Sub": [
+            "10.${BlockValue}.16.0/20",
+            {
+              "BlockValue": {
+                "Ref": "CIDRRangeValueSharedServicesVpc"
+              }
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${VPCName} Private Subnet (AZ1)"
+            }
+          }
+        ]
+      }
+    },
+    "PrivateSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            1,
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Fn::Sub": [
+            "10.${BlockValue}.48.0/20",
+            {
+              "BlockValue": {
+                "Ref": "CIDRRangeValueSharedServicesVpc"
+              }
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${VPCName} Private Subnet (AZ2)"
+            }
+          }
+        ]
+      }
+    },
+    "NatGateway1EIP": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": "InternetGatewayAttachment",
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "NatGateway2EIP": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": "InternetGatewayAttachment",
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "NatGateway1": {
+      "Type": "AWS::EC2::NatGateway",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "NatGateway1EIP",
+            "AllocationId"
+          ]
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnet1"
+        }
+      }
+    },
+    "NatGateway2": {
+      "Type": "AWS::EC2::NatGateway",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "NatGateway2EIP",
+            "AllocationId"
+          ]
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnet2"
+        }
+      }
+    },
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${VPCName} Public Routes"
+            }
+          }
+        ]
+      }
+    },
+    "DefaultPublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "InternetGatewayAttachment",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "PublicSubnet1RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnet1"
+        }
+      }
+    },
+    "PublicSubnet2RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnet2"
+        }
+      }
+    },
+    "PrivateRouteTable1": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${VPCName} Private Routes (AZ1)"
+            }
+          }
+        ]
+      }
+    },
+    "DefaultPrivateRoute1": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTable1"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {
+          "Ref": "NatGateway1"
+        }
+      }
+    },
+    "PrivateSubnet1RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTable1"
+        },
+        "SubnetId": {
+          "Ref": "PrivateSubnet1"
+        }
+      }
+    },
+    "PrivateRouteTable2": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "${VPCName} Private Routes (AZ2)"
+            }
+          }
+        ]
+      }
+    },
+    "DefaultPrivateRoute2": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTable2"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {
+          "Ref": "NatGateway2"
+        }
+      }
+    },
+    "PrivateSubnet2RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTable2"
+        },
+        "SubnetId": {
+          "Ref": "PrivateSubnet2"
+        }
+      }
+    },
+    "NoIngressSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupName": "no-ingress-sg",
+        "GroupDescription": "Security group with no ingress rule",
+        "VpcId": {
+          "Ref": "VPC"
+        }
       }
     }
   }
