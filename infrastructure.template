@@ -1,0 +1,64 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Cloudformation template to test howEFS works with EC2 instances",
+  "Paramters" : {
+    "TagUseCase": {
+      "Type": "String",
+      "Default": "Jenkins Build Server",
+      "Description": "Team (or person) launching instance and/or responsible for maintenance."
+    },
+  },
+  "Resources" : {
+    "EFS": {
+      "Type": "AWS::EFS::FileSystem",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "FileSystemTags": [
+          {
+            "Key": "Name",
+            "Value": "efs"
+          },
+          {
+            "Key": "Use Case",
+            "Value": {
+              "Ref": "TagUseCase"
+            }
+          }
+        ],
+        "PerformanceMode": "generalPurpose"
+      }
+    },
+    "MountTargetAZ1": {
+      "Type": "AWS::EFS::MountTarget",
+      "Properties": {
+        "FileSystemId": {
+          "Ref": "EFS"
+        },
+        "SubnetId": {
+          "Fn::ImportValue": "VPC-Gore-AZ1-Id"
+        },
+        "SecurityGroups": [
+          {
+            "Fn::ImportValue": "JenkinsEBEFSServerSG"
+          }
+        ]
+      }
+    },
+    "MountTargetAZ2": {
+      "Type": "AWS::EFS::MountTarget",
+      "Properties": {
+        "FileSystemId": {
+          "Ref": "JenkinsEFSProd"
+        },
+        "SubnetId": {
+          "Fn::ImportValue": "VPC-Gore-AZ2-Id"
+        },
+        "SecurityGroups": [
+          {
+            "Fn::ImportValue": "JenkinsEBEFSServerSG"
+          }
+        ]
+      }
+    }
+  }
+}
